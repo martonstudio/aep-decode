@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AEP Shell</title>
+<style>
+  :root {
+    --bg: #161616; --panel: #232323; --panel-head: #1d1d1d; --line: #111; --row-alt: #262626;
+    --text: #c8c8c8; --dim: #8a8a8a; --value: #4aa3ff; --cti: #3b9cff; --sel: #3a3f4a; --key: #d8d8d8;
+    --left: 460px; --row: 22px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 12px -apple-system, "Helvetica Neue", Arial, sans-serif;
+         display: grid; grid-template-rows: 34px minmax(140px, 38%) 1fr; gap: 2px; user-select: none; }
+  input { font: inherit; color: var(--text); background: #161616; border: 1px solid #3a3a3a; border-radius: 3px; padding: 3px 6px; }
+  button { font: inherit; color: var(--text); background: #3a3a3a; border: 1px solid #4a4a4a; border-radius: 3px; padding: 3px 10px; cursor: pointer; }
+  button:hover { background: #474747; }
+
+  #bar { display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel-head); }
+  #bar .name { font-weight: 600; margin-right: 8px; }
+  #bar input { flex: 1; min-width: 120px; }
+  #status { min-width: 220px; color: var(--dim); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34%; }
+  #status.err { color: #ff7a6b; }
+
+  #top { display: grid; grid-template-columns: 320px 1fr; gap: 2px; min-height: 0; }
+  .panel { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .tab { background: var(--panel-head); padding: 6px 10px; color: var(--text); border-bottom: 1px solid var(--line); flex: none; }
+  .tab b { font-weight: 600; }
+  .tab span { color: var(--dim); }
+  .scroll { overflow: auto; flex: 1; min-height: 0; }
+
+  .item { display: flex; align-items: center; gap: 6px; height: var(--row); padding-right: 8px; cursor: default; white-space: nowrap; }
+  .item:nth-child(even) { background: var(--row-alt); }
+  .item.comp { cursor: pointer; }
+  .item.sel { background: var(--sel); }
+  .item .kind { color: var(--dim); margin-left: auto; padding-left: 12px; }
+  .ico { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+  .ico.CompItem { background: #9b7ad6; }
+  .ico.FolderItem { background: #d6b24a; }
+  .ico.FootageItem { background: #6f8aa0; }
+
+  #viewer .scroll { display: flex; align-items: center; justify-content: center; background: #1a1a1a; color: #4a4a4a; }
+
+  #tl-head, .row { display: grid; grid-template-columns: var(--left) 1fr; }
+  #tl-head { height: 30px; background: var(--panel-head); border-bottom: 1px solid var(--line); flex: none; }
+  #timecode { display: flex; align-items: baseline; gap: 10px; padding: 4px 10px; }
+  #timecode .tc { color: var(--value); font-size: 17px; font-variant-numeric: tabular-nums; }
+  #timecode .fr { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #ruler { position: relative; cursor: ew-resize; border-left: 1px solid var(--line); overflow: hidden; }
+  #ruler .tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #3c3c3c; padding: 2px 0 0 4px; color: var(--dim); font-size: 10px; }
+  #rows { position: relative; }
+  .row { height: var(--row); border-bottom: 1px solid #1b1b1b; }
+  .row .l { display: flex; align-items: center; gap: 6px; padding-right: 8px; overflow: hidden; white-space: nowrap; }
+  .row .r { position: relative; border-left: 1px solid var(--line); background: #1e1e1e; }
+  .row.layer .l { background: #2b2b2b; cursor: pointer; }
+  .row.layer.sel .l { background: var(--sel); }
+  .row.group .l { color: var(--text); padding-left: 46px; }
+  .row.prop .l { padding-left: 58px; }
+  .twirl { width: 18px; text-align: center; color: var(--dim); flex: none; }
+  .num { width: 22px; text-align: right; color: var(--dim); flex: none; }
+  .swatch { width: 12px; height: 12px; flex: none; }
+  .lname { overflow: hidden; text-overflow: ellipsis; }
+  .ltype { color: var(--dim); margin-left: auto; padding-left: 10px; }
+  .bar { position: absolute; top: 3px; bottom: 3px; border-radius: 2px; opacity: .85; }
+  .sw { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #8a8a8a; background: transparent; padding: 0; flex: none; position: relative; }
+  .sw::after { content: ""; position: absolute; left: 50%; top: 50%; width: 1.5px; height: 5px; background: #8a8a8a; transform-origin: 50% 0; transform: rotate(180deg) translateX(-50%); }
+  .sw.on { border-color: var(--value); background: rgba(74,163,255,.25); }
+  .sw.on::after { background: var(--value); }
+  .pname { width: 110px; flex: none; }
+  .vals { display: flex; align-items: center; gap: 2px; color: var(--value); }
+  .val { width: 62px; background: transparent; border: 1px solid transparent; color: var(--value); padding: 1px 3px; text-align: right; font-variant-numeric: tabular-nums; user-select: text; }
+  .val:hover { border-color: #3a3a3a; }
+  .val:focus { outline: none; border-color: var(--value); background: #161616; }
+  .unit { color: var(--value); margin-right: 4px; }
+  .key { position: absolute; top: 50%; width: 9px; height: 9px; background: var(--key); transform: translate(-50%, -50%) rotate(45deg); }
+  .key.at { background: var(--value); }
+  #cti { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--cti); pointer-events: none; z-index: 3; }
+  #cti-head { position: absolute; top: 0; width: 11px; height: 14px; background: var(--cti); transform: translateX(-50%); clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); pointer-events: none; }
+  .empty { padding: 14px; color: var(--dim); }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span class="name">AEP Shell</span>
+    <input id="open-path" placeholder="/path/to/project.aep" spellcheck="false">
+    <button id="open-btn">Open</button>
+    <input id="save-path" placeholder="/path/to/new_file.aep" spellcheck="false">
+    <button id="save-btn">Save As</button>
+    <span id="status">No project open</span>
+  </div>
+
+  <div id="top">
+    <div class="panel">
+      <div class="tab"><b>Project</b></div>
+      <div class="scroll" id="project"><div class="empty">Open a project to list its items.</div></div>
+    </div>
+    <div class="panel" id="viewer">
+      <div class="tab" style="align-self: stretch"><b>Composition</b> <span id="comp-info"></span></div>
+      <div class="scroll">No viewer. This shell reads and writes no pixels.</div>
+    </div>
+  </div>
+
+  <div class="panel" id="timeline">
+    <div class="tab"><b id="tl-name">Timeline</b></div>
+    <div id="tl-head">
+      <div id="timecode"><span class="tc" id="tc">0:00:00:00</span><span class="fr" id="fr"></span></div>
+      <div id="ruler"><div id="cti-head"></div></div>
+    </div>
+    <div class="scroll"><div id="rows"><div class="empty">No composition.</div></div></div>
+  </div>
+
+<script>
+const LABELS = ["#666666", "#b53838", "#e4d84c", "#a9cbc7", "#e5bcc9", "#a9a9ca", "#e7c19e", "#b3c7b3",
+                "#677de0", "#4aa44c", "#8e2c9a", "#e8920d", "#7f452a", "#f46dd6", "#3da2a5", "#a89677", "#1e401e"];
+const SHOW_2D = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale", "ADBE Rotate Z", "ADBE Opacity"];
+const SHOW_3D = ["ADBE Anchor Point", "ADBE Position", "ADBE Scale", "ADBE Orientation",
+                 "ADBE Rotate X", "ADBE Rotate Y", "ADBE Rotate Z", "ADBE Opacity"];
+const UNITS = {"ADBE Scale": "%", "ADBE Opacity": "%", "ADBE Rotate X": "°", "ADBE Rotate Y": "°",
+               "ADBE Rotate Z": "°", "ADBE Orientation": "°"};
+const TYPES = {TextLayer: "Text", AVLayer: "AV", ShapeLayer: "Shape", CameraLayer: "Camera", LightLayer: "Light"};
+
+const S = { state: null, time: 0, open: new Set(), sel: null, busy: false };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function status(msg, err) { $("status").textContent = msg; $("status").className = err ? "err" : ""; }
+
+async function api(path, body) {
+  const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
+  const json = await res.json();
+  if (json.error) { status(json.error, true); throw new Error(json.error); }
+  return json;
+}
+
+function apply(state) { S.state = state; S.time = state.time; render(); }
+
+function timecode(t, fps) {
+  const base = Math.round(fps), total = Math.round(t * fps);
+  const p = (n) => String(n).padStart(2, "0");
+  const f = total % base, s = Math.floor(total / base);
+  return Math.floor(s / 3600) + ":" + p(Math.floor(s / 60) % 60) + ":" + p(s % 60) + ":" + p(f);
+}
+
+function renderProject() {
+  const st = S.state, kids = {};
+  for (const it of st.items) (kids[it.parent] = kids[it.parent] || []).push(it);
+  let html = "";
+  const walk = (parent, depth) => {
+    for (const it of (kids[parent] || []).sort((a, b) => a.name.localeCompare(b.name))) {
+      const comp = it.type === "CompItem", sel = st.comp && st.comp.id === it.id;
+      html += `<div class="item${comp ? " comp" : ""}${sel ? " sel" : ""}" data-id="${it.id}" data-type="${it.type}" style="padding-left:${8 + depth * 14}px">` +
+              `<span class="ico ${it.type}"></span><span>${esc(it.name)}</span><span class="kind">${it.type.replace("Item", "")}</span></div>`;
+      if (it.type === "FolderItem") walk(it.id, depth + 1);
+    }
+  };
+  walk(st.root, 0);
+  $("project").innerHTML = html || '<div class="empty">Project is empty.</div>';
+}
+
+function shownProps(layer) {
+  const want = layer.is_3d ? SHOW_3D : SHOW_2D;
+  const found = want.map((mn) => layer.transform.find((p) => p.match_name === mn)).filter(Boolean);
+  return found.length ? found : layer.transform;
+}
+
+function valueCells(layer, prop) {
+  const vals = Array.isArray(prop.value) ? prop.value : [prop.value];
+  const n = (!layer.is_3d && vals.length === 3) ? 2 : vals.length;
+  let html = "";
+  for (let i = 0; i < n; i++) {
+    html += `<input class="val" data-layer="${layer.id}" data-mn="${esc(prop.match_name)}" data-i="${i}" value="${vals[i].toFixed(1)}">` +
+            (i < n - 1 ? "<span>,</span>" : "");
+  }
+  return html + `<span class="unit">${UNITS[prop.match_name] || ""}</span>`;
+}
+
+function renderTimeline() {
+  const c = S.state.comp;
+  if (!c) { $("rows").innerHTML = '<div class="empty">No composition.</div>'; return; }
+  const pct = (t) => (100 * t / c.duration) + "%";
+  const eps = 0.5 / c.frame_rate;
+  $("tl-name").textContent = c.name;
+  $("comp-info").textContent = `${c.name} · ${c.width}×${c.height} · ${c.frame_rate} fps · ${timecode(c.duration, c.frame_rate)}`;
+  $("tc").textContent = timecode(S.time, c.frame_rate);
+  $("fr").textContent = `${String(Math.round(S.time * c.frame_rate)).padStart(5, "0")} (${c.frame_rate.toFixed(2)} fps)`;
+
+  const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => c.duration / s <= 20) || 600;
+  let ticks = "";
+  for (let t = 0; t < c.duration; t += step) ticks += `<div class="tick" style="left:${pct(t)}">${t < 60 ? String(t).padStart(2, "0") + "s" : Math.floor(t / 60) + "m" + String(t % 60).padStart(2, "0")}</div>`;
+  $("ruler").innerHTML = ticks + `<div id="cti-head" style="left:${pct(S.time)}"></div>`;
+
+  let html = "";
+  for (const l of c.layers) {
+    const open = S.open.has(l.id), color = LABELS[l.label] || LABELS[0];
+    const a = Math.max(0, Math.min(l.in_point, l.out_point)), b = Math.min(c.duration, Math.max(l.in_point, l.out_point));
+    html += `<div class="row layer${S.sel === l.id ? " sel" : ""}" data-id="${l.id}"><div class="l">` +
+            `<span class="twirl">${open ? "▾" : "▸"}</span><span class="num">${l.number}</span>` +
+            `<span class="swatch" style="background:${color}"></span><span class="lname">${esc(l.name)}</span>` +
+            `<span class="ltype">${TYPES[l.type] || l.type.replace("Layer", "")}</span></div>` +
+            `<div class="r"><div class="bar" style="left:${pct(a)};width:${pct(Math.max(0, b - a))};background:${color}"></div></div></div>`;
+    if (!open) continue;
+    html += `<div class="row group"><div class="l">Transform</div><div class="r"></div></div>`;
+    for (const p of shownProps(l)) {
+      const keys = p.keys.map((k) => `<div class="key${Math.abs(k - S.time) < eps ? " at" : ""}" style="left:${pct(k)}"></div>`).join("");
+      html += `<div class="row prop"><div class="l">` +
+              `<button class="sw${p.keys.length ? " on" : ""}" data-layer="${l.id}" data-mn="${esc(p.match_name)}" title="Add keyframe at current time"></button>` +
+              `<span class="pname">${esc(p.name)}</span><span class="vals">${valueCells(l, p)}</span></div>` +
+              `<div class="r">${keys}</div></div>`;
+    }
+  }
+  $("rows").innerHTML = (html || '<div class="empty">This composition has no layers.</div>') +
+    `<div id="cti" style="left:calc(var(--left) + (100% - var(--left)) * ${S.time / c.duration})"></div>`;
+}
+
+function render() {
+  renderProject();
+  renderTimeline();
+}
+
+async function openProject(path) {
+  status("Opening…");
+  const state = await api("/api/open", { path });
+  S.open.clear(); S.sel = null;
+  $("open-path").value = state.path;
+  if (!$("save-path").value) $("save-path").value = state.path.replace(/\.aep$/i, "") + "_shell.aep";
+  apply(state);
+  status(`Opened ${state.path.split("/").pop()} · ${state.items.length} items`);
+}
+
+async function seek(t, compId) {
+  const c = S.state.comp, id = compId === undefined ? c.id : compId;
+  apply(await api(`/api/state?comp=${id}&t=${t}`));
+}
+
+function rulerTime(ev) {
+  const c = S.state.comp, box = $("ruler").getBoundingClientRect();
+  const t = Math.max(0, Math.min(1, (ev.clientX - box.left) / box.width)) * c.duration;
+  const last = c.duration - 1 / c.frame_rate;
+  return Math.min(last, Math.round(t * c.frame_rate) / c.frame_rate);
+}
+
+$("open-btn").onclick = () => openProject($("open-path").value.trim()).catch(() => {});
+$("open-path").onkeydown = (ev) => { if (ev.key === "Enter") $("open-btn").click(); };
+
+$("save-btn").onclick = async () => {
+  try {
+    const out = await api("/api/save", { path: $("save-path").value.trim() });
+    status(`Saved ${out.saved.split("/").pop()} · ${out.bytes} bytes`);
+  } catch (e) {}
+};
+
+$("project").onclick = (ev) => {
+  const el = ev.target.closest(".item.comp");
+  if (el) seek(0, Number(el.dataset.id)).catch(() => {});
+};
+
+$("ruler").onmousedown = (ev) => {
+  if (!S.state || !S.state.comp) return;
+  const move = async (e) => {
+    if (S.busy) return;
+    S.busy = true;
+    try { await seek(rulerTime(e)); } catch (err) {} finally { S.busy = false; }
+  };
+  const up = (e) => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); S.busy = false; move(e); };
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", up);
+  move(ev);
+};
+
+$("rows").onclick = async (ev) => {
+  const sw = ev.target.closest(".sw");
+  if (sw) {
+    try {
+      apply(await api("/api/key", { comp: S.state.comp.id, layer: Number(sw.dataset.layer), match_name: sw.dataset.mn, time: S.time }));
+      status(`Keyframe added at ${timecode(S.time, S.state.comp.frame_rate)}`);
+    } catch (e) {}
+    return;
+  }
+  if (ev.target.closest(".val")) return;
+  const row = ev.target.closest(".row.layer");
+  if (!row) return;
+  const id = Number(row.dataset.id);
+  if (ev.target.closest(".twirl")) { S.open.has(id) ? S.open.delete(id) : S.open.add(id); }
+  S.sel = id;
+  renderTimeline();
+};
+
+$("rows").addEventListener("change", async (ev) => {
+  const el = ev.target.closest(".val");
+  if (!el) return;
+  const layerId = Number(el.dataset.layer), mn = el.dataset.mn;
+  const layer = S.state.comp.layers.find((l) => l.id === layerId);
+  const prop = layer.transform.find((p) => p.match_name === mn);
+  const typed = parseFloat(el.value);
+  if (Number.isNaN(typed)) { renderTimeline(); status("Not a number", true); return; }
+  let value;
+  if (Array.isArray(prop.value)) { value = prop.value.slice(); value[Number(el.dataset.i)] = typed; } else { value = typed; }
+  try {
+    apply(await api("/api/set", { comp: S.state.comp.id, layer: layerId, match_name: mn, value, time: S.time }));
+    status(`${prop.name} set on ${layer.name}`);
+  } catch (e) { renderTimeline(); }
+});
+
+$("rows").addEventListener("keydown", (ev) => { if (ev.key === "Enter" && ev.target.classList.contains("val")) ev.target.blur(); });
+
+(async () => {
+  const q = new URLSearchParams(location.search);
+  if (!q.get("open")) return;
+  try {
+    await openProject(q.get("open"));
+    if (q.get("expand")) { for (const l of (S.state.comp ? S.state.comp.layers : [])) S.open.add(l.id); }
+    if (q.get("t")) await seek(Number(q.get("t"))); else renderTimeline();
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
