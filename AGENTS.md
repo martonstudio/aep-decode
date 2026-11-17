@@ -208,12 +208,16 @@ for tl in comp.text_layers:                                  # change many text 
 # Effects
 for fx in list(layer.effects.properties):                    # ASK FIRST. remove effects from a layer
     print(fx.match_name); fx.remove()
+if layer.effects.can_add_property("ADBE Gaussian Blur 2"):   # True only if this effect is already used somewhere in the project
+    blur = layer.effects.add_property("ADBE Gaussian Blur 2")
+    next(p for p in blur.properties if p.match_name == "ADBE Gaussian Blur 2-0001").value = 25.0   # blurriness
 ```
 
 Notes, all **[verified]**:
 
 - Transform match names: `ADBE Anchor Point`, `ADBE Position`, `ADBE Scale`, `ADBE Opacity`, `ADBE Rotate Z` (2D rotation), `ADBE Rotate X`, `ADBE Rotate Y`, `ADBE Orientation`. Position, scale and anchor point take `[x, y, z]`, also on 2D layers. Opacity and scale are percent.
 - On a property that has keyframes, use `set_value_at_time`, not `.value`.
+- An effect can be added only if the same effect is already used somewhere in that project; `can_add_property` tells you. Adding one and setting its amount was rendered and seen in the picture (2026 file). Effect parameters are addressed by match name, the effect's match name plus a number (`-0001`, `-0002`, ...); print them to see which is which. For an effect the project does not contain: "That can't be done without After Effects."
 - Effect removal was saved, re-read and rendered without error in 2025, 2026 and 2027 files; the difference in the picture was too subtle to confirm by eye, so look at the result.
 - Changing text does not resize or reposition anything. Longer copy can overlap its neighbours; say so.
 - Many comps can share one name (the production project has 12 called the same). Find the one you mean by where it sits or what it contains, and address it by `comp.id`, not by name.
@@ -227,11 +231,11 @@ To gather stray footage into a folder next to the project: copy each file (do no
 
 ### Untested here — do it on the copy, check it, tell the designer it is untested
 
-`py_aep` offers these, but they have not been run in this repo: effect parameter values, masks, shape layer contents, writing expressions, markers, `project.replace_font(...)`, `project.consolidate_footage()`, `project.import_file(...)`, layer parenting, time remap, adding render queue items.
+`py_aep` offers these, but they have not been run in this repo: effect parameter values other than the one above, masks, shape layer contents, writing expressions, markers, `project.replace_font(...)`, `project.consolidate_footage()`, `project.import_file(...)`, layer parenting, time remap, adding render queue items.
 
 ### Not possible
 
-- Adding an effect to a layer: `py_aep` refused it when tried. **[verified]**
+- Adding an effect that is not already used somewhere in the project: `py_aep` refuses it. **[verified]**
 - Seeing what a frame looks like, what an expression evaluates to, or what an effect outputs. Render with `aerender` and look at the result instead.
 - Editing third-party plugin settings.
 - Files saved by versions other than After Effects 2025, 2026 and 2027.
