@@ -18,7 +18,7 @@ If something breaks, tell me what you asked for, the command that failed, and th
 
 Script After Effects to change one setting. Save. Diff the chunk. Repeat.
 
-That's it. `PLAN.md` lists what is decoded, what isn't, and the order I'm going in.
+That's it.
 
 ## Editor
 
