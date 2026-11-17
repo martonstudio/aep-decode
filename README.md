@@ -6,6 +6,8 @@ Built on [py_aep](https://github.com/forticheprod/py-aep). Install it separately
 
 Work on copies. Keep your originals.
 
+Using an LLM to amend and render a project? Point it at [AGENTS.md](AGENTS.md).
+
 ## Method
 
 Script After Effects to change one setting. Save. Diff the chunk. Repeat.
