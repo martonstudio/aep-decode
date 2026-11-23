@@ -243,6 +243,16 @@ Notes, all **[verified]**:
 - Before any "ASK FIRST" line, print what it would remove and show the designer. Examples:
   `[f.name for f in project.footages if not f.used_in]` for unused footage; `[c.name for c in item("clip.mp4").used_in]` for where an item is used.
 
+### Effects that point at a layer
+
+Some effects store a layer id in a parameter: a visible one (CC Page Turn's Back Page, a layer dropdown) or a hidden one (CC Page Turn links to its own layer in its first, hidden parameter `-0000`). These are ordinary parameters, listed in the effect's `parT` definitions; there is no opaque plugin data.
+
+- `add_property` copies the definition, including the stored layer id. In any comp that does not hold that layer, After Effects 2026 stops the render with "Can't find layer ID=N in composition". **[verified]**
+- `layer.copy_to_comp(comp)` of a layer that already carries the effect, then `replace_source(item)` on the copy, renders correctly, also after the original comp and layer are deleted. **[verified, After Effects 2026, CC Page Turn]**
+- Writing the layer id with `py_aep` (py_aep reads CC Page Turn's Back Page as 1 when it stores 778): untested.
+
+CC Page Turn parameters, by match name `CC Page Turn-00NN`: `08` Controls (1 Classic UI, 2 separator, 3 Top Left, 4 Top Right, 5 Bottom Left, 6 Bottom Right Corner), `01` Fold Position, `02` Fold Direction, `03` Fold Radius, `04` Light Direction, `07` Render, `05` Back Page, `09` Back Opacity, `06` Paper Color. In a corner mode Fold Position is where the corner is dragged to and the fold sits halfway between, so a page that is fully away needs the corner dragged about two frame diagonals. **[verified by render]**
+
 ### Tidying footage on disk
 
 To gather stray footage into a folder next to the project: copy each file (do not move it), then relink the item to the copy with `.replace(new_path)`, then save a new version. Copy and relink are each **[verified]**; a whole-project gather has not been run. Moving or deleting the old files is a separate step that needs the designer's yes.
