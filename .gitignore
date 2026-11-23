@@ -1,3 +1,10 @@
 BUDGET.md
 PLAN.md
 NEXT.md
+# seed-making only, kept local
+effects_seed/seed_effects.jsx
+effects_seed/app_effects_*.json
+effects_seed/failures_*.txt
+tools/decode_effects.py
+tools/diff_effects.py
+__pycache__/

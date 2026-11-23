@@ -13,7 +13,7 @@ Nothing in this file has been run on Windows. Every Windows line is **[unverifie
 
 1. **Never open, script or automate After Effects.** No `osascript`, no ExtendScript, no MCP into After Effects.
 2. **Never write to the file the designer gave you.** Copy it, edit the copy, save under a new versioned name (`project_v002.aep`, `_v003`, ...). `py_aep` refuses to save over an existing file.
-3. **Only edit files saved by After Effects 2025, 2026 or 2027** (version `25.x`, `26.x`, `27.x`). Check first. Most edits here were proven on 2026; on 2025 and 2027 only reading, text changes and effect removal were proven, so treat everything else on those two as untested (rule 6). For older or newer versions say: "That can't be done without After Effects."
+3. **Only edit files saved by After Effects 2024, 2025, 2026 or 2027** (version `24.x`, `25.x`, `26.x`, `27.x`). Check first. Most edits here were proven on 2026; on 2025 and 2027 only reading, text changes, effect removal and adding effects were proven, and on 2024 only reading and adding effects, so treat everything else on those three as untested (rule 6). For older or newer versions say: "That can't be done without After Effects."
 4. **Ask before anything that removes or overwrites.** Show the exact list first, wait for a yes, then do it. This covers:
    - removing items, comps, layers, effects, keyframes or markers inside the project, including "remove unused footage" and "reduce project";
    - moving, renaming or deleting files on disk. Prefer copying footage over moving it;
@@ -132,8 +132,8 @@ import py_aep
 
 src = sys.argv[1]
 app = py_aep.parse(src)
-if app.version.split(".")[0] not in ("25", "26", "27"):
-    sys.exit(f"{src} was saved by After Effects {app.version}; only 25.x, 26.x and 27.x are supported")
+if app.version.split(".")[0] not in ("24", "25", "26", "27"):
+    sys.exit(f"{src} was saved by After Effects {app.version}; only 24.x to 27.x are supported")
 project = app.project
 
 def item(name):
@@ -208,16 +208,34 @@ for tl in comp.text_layers:                                  # change many text 
 # Effects
 for fx in list(layer.effects.properties):                    # ASK FIRST. remove effects from a layer
     print(fx.match_name); fx.remove()
-if layer.effects.can_add_property("ADBE Gaussian Blur 2"):   # True only if this effect is already used somewhere in the project
+effects_seed.load_seed(int(app.version.split(".")[0]) + 2000)   # once per script; see "Adding any effect" below
+if layer.effects.can_add_property("ADBE Gaussian Blur 2"):   # True for any effect in the seed, or already used in the project
     blur = layer.effects.add_property("ADBE Gaussian Blur 2")
     next(p for p in blur.properties if p.match_name == "ADBE Gaussian Blur 2-0001").value = 25.0   # blurriness
 ```
+
+### Adding any effect (effects seed)
+
+`py_aep` can only add an effect whose full definition it can find. A project holds definitions only for effects it already uses. The folder `effects_seed/` holds one project per After Effects version with every installed effect applied once (`AllEffects_AE2024.aep` ... `AllEffects_AE2027.aep`), and `tools/effects_seed.py` copies those definitions into `py_aep` so `add_property` works for any of them. **[verified]**
+
+```python
+import sys
+sys.path.insert(0, "/path/to/aep-decode/tools")     # this repo's tools folder
+import effects_seed
+effects_seed.load_seed(2026)                          # the seed matching the file's version: 24.x -> 2024, ... 27.x -> 2027
+```
+
+- Use the seed whose year matches the file. Seeds from other years also work (2024 into 2025, 2026 and 2027 files; 2027 into 2025 and 2026 files), but they bring that year's defaults: Gaussian Blur's Blurriness defaults to 0 in the 2024 seed and 25 from 2025 on.
+- What each effect's parameters are called, their types, defaults, ranges and dropdown options: `effects_seed/effects_AE<year>.json`. What changed between versions: `effects_seed/effects_diff.md`.
+- Proven by adding Gaussian Blur, Fill, Invert and Tint, setting a value, saving, re-reading and checking the rendered picture, in a 2024, 2025, 2026 and 2027 file each (2025 checked with a frame saved by After Effects 2025 itself, because its `aerender` does not start on the test machine). The other ~440 effects have not each been rendered: tell the designer which effects you added and ask them to look. Effects that store extra data (Curves, Levels) are the most likely to need care.
+- Not in any seed: Cineware (needs Cinema 4D), Apply Color LUT, Basic Text, Path Text and Numbers (they open a dialog when applied; Apply Color LUT is in the 2024 seed only). Dropdown Control is not in the seeds; `py_aep` creates it itself.
+- A new After Effects version needs a new seed, and making one needs After Effects: "That can't be done without After Effects" until someone makes one.
 
 Notes, all **[verified]**:
 
 - Transform match names: `ADBE Anchor Point`, `ADBE Position`, `ADBE Scale`, `ADBE Opacity`, `ADBE Rotate Z` (2D rotation), `ADBE Rotate X`, `ADBE Rotate Y`, `ADBE Orientation`. Position, scale and anchor point take `[x, y, z]`, also on 2D layers. Opacity and scale are percent.
 - On a property that has keyframes, use `set_value_at_time`, not `.value`.
-- An effect can be added only if the same effect is already used somewhere in that project; `can_add_property` tells you. Adding one and setting its amount was rendered and seen in the picture (2026 file). Effect parameters are addressed by match name, the effect's match name plus a number (`-0001`, `-0002`, ...); print them to see which is which. For an effect the project does not contain: "That can't be done without After Effects."
+- Without the effects seed, an effect can be added only if the same effect is already used somewhere in that project; with it, any effect in the seed can be added (see "Adding any effect"). `can_add_property` tells you. Effect parameters are addressed by match name, the effect's match name plus a number (`-0001`, `-0002`, ...); print them, or look them up in `effects_seed/effects_AE<year>.json`.
 - Effect removal was saved, re-read and rendered without error in 2025, 2026 and 2027 files; the difference in the picture was too subtle to confirm by eye, so look at the result.
 - Changing text does not resize or reposition anything. Longer copy can overlap its neighbours; say so.
 - Many comps can share one name (the production project has 12 called the same). Find the one you mean by where it sits or what it contains, and address it by `comp.id`, not by name.
@@ -235,10 +253,10 @@ To gather stray footage into a folder next to the project: copy each file (do no
 
 ### Not possible
 
-- Adding an effect that is not already used somewhere in the project: `py_aep` refuses it. **[verified]**
+- Adding an effect that is neither in the project nor in the effects seed (third-party plugins, Cineware, the dialog effects listed above): `py_aep` refuses it. **[verified]**
 - Seeing what a frame looks like, what an expression evaluates to, or what an effect outputs. Render with `aerender` and look at the result instead.
 - Editing third-party plugin settings.
-- Files saved by versions other than After Effects 2025, 2026 and 2027.
+- Files saved by versions other than After Effects 2024, 2025, 2026 and 2027.
 
 For these: "That can't be done without After Effects."
 
