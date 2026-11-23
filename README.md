@@ -7,8 +7,9 @@ Point Claude Code, Codex or any agent with a terminal at [AGENTS.md](AGENTS.md).
 - Works on a copy. Your original is never written to.
 - Asks before it removes anything.
 - Checks every edit with a test render before it tells you it's done.
+- Can add any built-in effect, even one the project doesn't use yet.
 
-Tested on macOS with After Effects 2025, 2026 and 2027. Windows is written up but not tested yet. After Effects has to be installed for rendering.
+Tested on macOS with After Effects 2024, 2025, 2026 and 2027. Windows is written up but not tested yet. After Effects has to be installed for rendering.
 
 Built on [py_aep](https://github.com/forticheprod/py-aep) by Aurore Delaunay. That library does the reading and writing; this repo is the instruction set and the proof of which edits survive After Effects.
 
@@ -38,6 +39,8 @@ Not click-tested yet. If something breaks, tell me what you did.
 `tools/gap.py` counts the chunks and bytes py_aep can't read yet. Give it a text file with one `.aep` path per line.
 
 `tools/gap2.py` does the same per field. Give it a folder with `aep_list.txt` inside.
+
+`tools/effects_seed.py` loads every built-in effect from `effects_seed/`, one seed project per After Effects version.
 
 ## License
 
