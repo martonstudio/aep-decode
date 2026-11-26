@@ -1,0 +1,171 @@
+diff -ru --exclude=__pycache__ py_aep_orig/src/py_aep/binary/footage_chunks.py py_aep_patched/src/py_aep/binary/footage_chunks.py
+--- py_aep_orig/src/py_aep/binary/footage_chunks.py	2026-09-30 23:56:25
++++ py_aep_patched/src/py_aep/binary/footage_chunks.py	2026-11-26 15:48:20
+@@ -10,6 +10,7 @@
+ 
+ from __future__ import annotations
+ 
++import os
+ import struct
+ from typing import TYPE_CHECKING
+ 
+@@ -533,6 +534,48 @@
+     )
+     chunk.psd_group_name = layer_name
+     return chunk.tobytes()
++
++
++def png_ihdr(path: str | os.PathLike[str]) -> tuple[int, int, int, int]:
++    """(width, height, bit depth, colour type) from a PNG's IHDR chunk."""
++    with open(path, "rb") as fp:
++        head = fp.read(26)
++    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
++        raise ValueError(f"{path}: not a PNG file")
++    return struct.unpack(">IIBB", head[16:26])
++
++
++def build_png_opti_data(path: str | os.PathLike[str], total: int = 322) -> bytes:
++    """Build AE's `png!` `opti` asset-info body for a single PNG file.
++
++    Layout copied from AE-written projects (AE 2025/2026 write 322 bytes,
++    AE 2027 326): `png!`, u16 1, u32 body size, 01 00 00 00 00 00 00 01,
++    u32 width, u32 height, u32 bit depth, u32 0, u32 PNG colour type,
++    8 zero bytes, u32 4 (channels), u32 rowbytes (width * 4 * bytes per
++    channel), u32 0, then the file name, NUL-padded to the body size.
++    AE 2027 crashes (PNGIOp_UpdateHeaderFromPNGInfo) on an empty opti.
++    """
++    width, height, bit_depth, color_type = png_ihdr(path)
++    head = (
++        b"png!"
++        + struct.pack(">HI", 1, total)
++        + bytes.fromhex("0100000000000001")
++        + struct.pack(">IIIII", width, height, bit_depth, 0, color_type)
++        + b"\x00" * 8
++        + struct.pack(">III", 4, width * 4 * max(bit_depth // 8, 1), 0)
++    )
++    name = os.path.basename(os.fspath(path)).encode("utf-8")[: total - len(head) - 1]
++    return head + name + b"\x00" * (total - len(head) - len(name))
++
++
++def png_sspc_depth(path: str | os.PathLike[str]) -> int:
++    """`sspc` byte 0x3F for a PNG: bits per pixel incl. alpha (AE: 24 RGB, 32 RGBA).
++
++    AE reads the alpha channel only when this says 32; zero makes it drop alpha.
++    """
++    _w, _h, bit_depth, color_type = png_ihdr(path)
++    channels = 4 if color_type in (4, 6) else 3
++    return channels * 8 * max(bit_depth // 8, 1)
+ 
+ 
+ def build_dpx_opti_data() -> bytes:
+diff -ru --exclude=__pycache__ py_aep_orig/src/py_aep/data/file_formats.py py_aep_patched/src/py_aep/data/file_formats.py
+--- py_aep_orig/src/py_aep/data/file_formats.py	2026-09-30 23:56:25
++++ py_aep_patched/src/py_aep/data/file_formats.py	2026-11-26 15:48:07
+@@ -32,6 +32,9 @@
+     - `"psd"`: AE itself writes an empty opti for PSD (AE 2026 measured);
+       py-aep generates a `PsdOptiChunk` with layer metadata, which AE
+       accepts on re-open. The 602-byte body is produced by `build_psd_opti_data`.
++    - `"png"`: AE 2027's PNG reader needs the 322-byte `png!` header (see
++      `build_png_opti_data`); an empty opti crashes aerender in
++      `PNGIOp_UpdateHeaderFromPNGInfo`. Sequences use the generic header.
+     - `"dpx"`: AE needs the 48-byte DPX/Cineon format-options header (see
+       `build_dpx_opti_data`).
+     - `"unsupported"`: AE requires a format-specific `opti` not yet
+@@ -75,7 +78,7 @@
+     # (media_gap_formats.aep fixture).
+     ".aif": FileFormat("AIFC", False, "generic"),
+     ".wav": FileFormat("WAVE", False, "generic"),
+-    ".png": FileFormat("png!", False, "empty"),
++    ".png": FileFormat("png!", False, "png"),
+     ".tif": FileFormat("TIF ", False, "tiff"),
+     ".tiff": FileFormat("TIF ", False, "tiff"),
+     # DPX and Cineon still frames and sequences; verified: AE 2026 imports
+diff -ru --exclude=__pycache__ py_aep_orig/src/py_aep/models/sources/file.py py_aep_patched/src/py_aep/models/sources/file.py
+--- py_aep_orig/src/py_aep/models/sources/file.py	2026-09-30 23:56:25
++++ py_aep_patched/src/py_aep/models/sources/file.py	2026-11-26 15:48:20
+@@ -14,6 +14,8 @@
+     TextOptiChunk,
+     build_ai_layer_opti_data,
+     build_dpx_opti_data,
++    build_png_opti_data,
++    png_sspc_depth,
+     build_generic_opti_data,
+     build_psd_layer_opti_data,
+     build_psd_opti_data,
+@@ -85,7 +87,9 @@
+         )
+ 
+ 
+-def _opti_data(fmt: FileFormat, info: MediaInfo, *, sequence: bool) -> bytes:
++def _opti_data(
++    fmt: FileFormat, info: MediaInfo, *, sequence: bool, path: Path | None = None
++) -> bytes:
+     """Select the `opti` asset-info body for a file source.
+ 
+     Rules verified against AE 2026:
+@@ -117,11 +121,25 @@
+         return build_dpx_opti_data()
+     if fmt.opti == "text":
+         return build_text_opti_data(info.width, info.height)
+-    if fmt.opti == "empty" and not sequence:
++    if fmt.opti == "png" and not sequence and path is not None:
++        return build_png_opti_data(path)
++    if fmt.opti in ("empty", "png") and not sequence:
+         return b""
+     return build_generic_opti_data(fmt.source_format, sequence=sequence)
+ 
+ 
++def _apply_png_sspc(sspc: SspcChunk, path: Path) -> None:
++    """Fill the `sspc` fields AE writes for a single PNG: byte 0x3F (bits per
++    pixel incl. alpha; 0 makes AE drop the alpha channel), bytes 0x40-0x41
++    (both 1 in every AE-written PNG item) and the cached file size."""
++    reserved = bytearray(sspc._reserved_3e)
++    reserved[1] = png_sspc_depth(path)
++    reserved[2] = 1
++    reserved[3] = 1
++    sspc._reserved_3e = bytes(reserved)
++    sspc.data_size = path.stat().st_size
++
++
+ #: The profile AE falls back to for media that carries none of its own.
+ _DEFAULT_PROFILE = "sRGB IEC61966-2.1"
+ 
+@@ -697,7 +715,7 @@
+                 range_end=range_end,
+             )
+         info = probe_media(path)
+-        opti_data = _opti_data(fmt, info, sequence=False)
++        opti_data = _opti_data(fmt, info, sequence=False, path=path)
+         # AI/EPS/PDF carry an embedded ICC profile AE records in CLRS.
+         profile_name = read_ai_color_profile(path) if fmt.opti == "text" else None
+         if fmt.opti == "psd":
+@@ -712,7 +730,7 @@
+         else:
+             reserved_c8 = None
+             data_size = 0
+-        return cls._new(
++        source = cls._new(
+             path,
+             source_format=fmt.source_format,
+             width=info.width,
+@@ -729,6 +747,9 @@
+             data_size=data_size,
+             reserved_c8=reserved_c8,
+         )
++        if fmt.opti == "png":
++            _apply_png_sspc(source._sspc, path)
++        return source
+ 
+     @classmethod
+     def _from_layer(
+@@ -1060,7 +1081,9 @@
+             # AE refreshes the cached source size to the file's byte size
+             # (probed: 3614 -> 223874 across the reload fixture pair).
+             sspc.data_size = path.stat().st_size
+-            opti_data = _opti_data(fmt, info, sequence=False)
++            opti_data = _opti_data(fmt, info, sequence=False, path=path)
++            if fmt.opti == "png":
++                _apply_png_sspc(sspc, path)
+             if opti_data:
+                 new_opti = OptiChunk.read(
+                     io.BytesIO(opti_data), len(opti_data), chunk_type="opti"

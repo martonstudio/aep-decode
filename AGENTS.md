@@ -243,6 +243,24 @@ Notes, all **[verified]**:
 - Before any "ASK FIRST" line, print what it would remove and show the designer. Examples:
   `[f.name for f in project.footages if not f.used_in]` for unused footage; `[c.name for c in item("clip.mp4").used_in]` for where an item is used.
 
+### PNG footage (import and replace)
+
+`py_aep` (pin e12a451) writes an empty `opti` chunk for a single PNG and leaves the bits-per-pixel and file-size fields of `sspc` at 0. AE 2027 crashes on render (`aerendercore` in `PNGIOp_UpdateHeaderFromPNGInfo`, the log stops after the output settings), and once that is fixed, alpha renders as a black box. `tools/fix_png.py` writes the `png!` header and those fields the way AE does. Call it after every PNG `import_file` and every `item.replace(path)` to a PNG:
+
+```python
+from fix_png import fix_png_item          # tools/ on sys.path
+item = project.import_file(ImportOptions("/abs/path/art.png"))
+fix_png_item(item)
+```
+
+The same change as a patch to py_aep itself: `tools/py_aep_png_opti.patch` (`patch -p1` from the py_aep repo root at e12a451). **[verified]** AE 2027: RGBA and RGB PNGs render with correct alpha after import, replace with another PNG and replace with the same file; without the fix all of them crash (a commercial job, 2026-11-26). Unverified: 16-bit, greyscale and palette PNGs; AE 2025/2026; PNG sequences (left as before).
+
+### Building comps from a designer PSD
+
+A designer PSD (artboards, smart objects) becomes a folder per artboard: the reference frame Photoshop rendered, one PNG per raster layer, and `layers.json` holding every vector path, text setting and placement in document pixels. A comp is then built from that folder: vectors become shape layers, text stays editable, images are PNG footage. The protocol, tools and what's verified are in psd-decode (`~/Dropbox/00_LIVEPROJECTS/076_PSD_DECODE`, `github.com/martonstudio/psd-decode`); working rules in `~/.claude/photoshop.md`.
+
+What this repo supplies to that build: shape layers from Bezier data (`Shape(vertices, in_tangents, out_tangents, closed)` plus a Fill whose `ADBE Vector Fill Rule` is 1 nonzero / 2 even-odd), text layers (`add_text`, `add_box_text` with `box_text_pos`), and PNG footage through `tools/fix_png.py`. **[verified]** AE 2027, a commercial job's end frame: every area within 1 px of Photoshop's frame, checked on a lossless TIFF render.
+
 ### Effects that point at a layer
 
 Some effects store a layer id in a parameter: a visible one (CC Page Turn's Back Page, a layer dropdown) or a hidden one (CC Page Turn links to its own layer in its first, hidden parameter `-0000`). These are ordinary parameters, listed in the effect's `parT` definitions; there is no opaque plugin data.
@@ -252,6 +270,14 @@ Some effects store a layer id in a parameter: a visible one (CC Page Turn's Back
 - Writing the layer id with `py_aep` (py_aep reads CC Page Turn's Back Page as 1 when it stores 778): untested.
 
 CC Page Turn parameters, by match name `CC Page Turn-00NN`: `08` Controls (1 Classic UI, 2 separator, 3 Top Left, 4 Top Right, 5 Bottom Left, 6 Bottom Right Corner), `01` Fold Position, `02` Fold Direction, `03` Fold Radius, `04` Light Direction, `07` Render, `05` Back Page, `09` Back Opacity, `06` Paper Color. In a corner mode Fold Position is where the corner is dragged to and the fold sits halfway between, so a page that is fully away needs the corner dragged about two frame diagonals. **[verified by render]**
+
+### Gotchas found in production (MLA15, Nov 2026) **[verified by render]**
+
+- `prop.remove_all_keys()` followed by a static `prop.value = ...` leaves After Effects rendering the old keyframes. Keep the keys and set each key's value instead, or replace them with new keys.
+- `layer.stretch = ...` set after keys exist scales the key times with it. Set stretch before adding keys.
+- `item.used_in` is linked once per parse. After removing layers or comps, save, parse again, then decide what footage is unused.
+- `ImportAsType.PROJECT` is not supported: one .aep cannot be imported into another. Replay the other file's changes instead (diff, rebuild, copy transforms by layer name).
+- Layer styles (Drop Shadow etc.) can be switched on although py_aep guards `enabled`: AE stores all ten styles as identical groups and the flag is the only difference (bypass the descriptor's validator for that write). Rendered correctly in AE 2026.
 
 ### Tidying footage on disk
 
